@@ -3,6 +3,7 @@
 import comfy.utils
 import asyncio
 import aiohttp
+import json
 import numpy as np
 import csv
 import os
@@ -93,7 +94,9 @@ async def tag(image, model_name, threshold=0.35, character_threshold=0.85, exclu
 
     result = list(zip(tags, probs[0]))
 
-    # rating = max(result[:general_index], key=lambda x: x[1])
+    # Rating: catégorie 9 dans le CSV (general, sensitive, questionable, explicit)
+    rating = {item[0]: float(item[1]) for item in result[:general_index]}
+
     general = [item for item in result[general_index:character_index] if item[1] > threshold]
     character = [item for item in result[character_index:] if item[1] > character_threshold]
 
@@ -110,7 +113,7 @@ async def tag(image, model_name, threshold=0.35, character_threshold=0.85, exclu
     tags_with_probs = [{"tag": item[0], "probability": round(float(item[1]), 2)} for item in all]
 
     print(res)
-    return res, tags_with_probs
+    return res, tags_with_probs, rating
 
 
 async def download_model(model, client_id, node):
@@ -170,9 +173,9 @@ async def get_tags(request):
     default = defaults["model"] + ".onnx"
     model = default if default in models else models[0]
 
-    res, tags_with_probs = await tag(image, model, client_id=request.rel_url.query.get("clientId", ""), node=request.rel_url.query.get("node", ""))
+    res, tags_with_probs, rating = await tag(image, model, client_id=request.rel_url.query.get("clientId", ""), node=request.rel_url.query.get("node", ""))
     formatted = ", ".join(f"{d['tag']}:{d['probability']:.2f}" for d in tags_with_probs)
-    return web.json_response({"tags": res, "tags_with_probabilities": formatted})
+    return web.json_response({"tags": res, "tags_with_probabilities": formatted, "rating": rating})
 
 
 class WD14Tagger:
@@ -190,9 +193,9 @@ class WD14Tagger:
             "exclude_tags": ("STRING", {"default": defaults["exclude_tags"]}),
         }}
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("tags", "tags_with_probabilities")
-    OUTPUT_IS_LIST = (True, True)
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("tags", "tags_with_probabilities", "rating")
+    OUTPUT_IS_LIST = (True, True, True)
     FUNCTION = "tag"
     OUTPUT_NODE = True
 
@@ -205,16 +208,18 @@ class WD14Tagger:
         pbar = comfy.utils.ProgressBar(tensor.shape[0])
         tags = []
         tags_with_probs_formatted = []
+        ratings = []
         for i in range(tensor.shape[0]):
             img = Image.fromarray(tensor[i])
-            res, tags_with_probs = wait_for_async(lambda im=img: tag(im, model, threshold, character_threshold, exclude_tags, replace_underscore, trailing_comma))
+            res, tags_with_probs, rating = wait_for_async(lambda im=img: tag(im, model, threshold, character_threshold, exclude_tags, replace_underscore, trailing_comma))
             tags.append(res)
-            formatted = ", ".join(f"{d['tag']}:{d['probability']:.2f}" for d in tags_with_probs)
+            formatted = ",".join(f"{d['tag']}#{d['probability']:.2f}" for d in tags_with_probs)
             tags_with_probs_formatted.append(formatted)
+            ratings.append(json.dumps(rating))
             pbar.update(1)
         return {
-            "ui": {"tags": tags, "tags_with_probabilities": tags_with_probs_formatted},
-            "result": (tags, tags_with_probs_formatted),
+            "ui": {"tags": tags, "tags_with_probabilities": tags_with_probs_formatted, "ratings": ratings},
+            "result": (tags, tags_with_probs_formatted, ratings),
         }
 
 
