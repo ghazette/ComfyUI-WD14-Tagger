@@ -101,10 +101,16 @@ async def tag(image, model_name, threshold=0.35, character_threshold=0.85, exclu
     remove = [s.strip() for s in exclude_tags.lower().split(",")]
     all = [tag for tag in all if tag[0] not in remove]
 
-    res = ("" if trailing_comma else ", ").join((item[0].replace("(", "\\(").replace(")", "\\)") + (", " if trailing_comma else "") for item in all))
+    res = ("" if trailing_comma else ", ").join(
+        (item[0].replace("(", "\\(").replace(")", "\\)") + (", " if trailing_comma else ""))
+        for item in all
+    )
+
+    # Liste de dicts pour l'API / result
+    tags_with_probs = [{"tag": item[0], "probability": round(float(item[1]), 2)} for item in all]
 
     print(res)
-    return res
+    return res, tags_with_probs
 
 
 async def download_model(model, client_id, node):
@@ -164,7 +170,9 @@ async def get_tags(request):
     default = defaults["model"] + ".onnx"
     model = default if default in models else models[0]
 
-    return web.json_response(await tag(image, model, client_id=request.rel_url.query.get("clientId", ""), node=request.rel_url.query.get("node", "")))
+    res, tags_with_probs = await tag(image, model, client_id=request.rel_url.query.get("clientId", ""), node=request.rel_url.query.get("node", ""))
+    formatted = ", ".join(f"{d['tag']}:{d['probability']:.2f}" for d in tags_with_probs)
+    return web.json_response({"tags": res, "tags_with_probabilities": formatted})
 
 
 class WD14Tagger:
@@ -182,8 +190,9 @@ class WD14Tagger:
             "exclude_tags": ("STRING", {"default": defaults["exclude_tags"]}),
         }}
 
-    RETURN_TYPES = ("STRING",)
-    OUTPUT_IS_LIST = (True,)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("tags", "tags_with_probabilities")
+    OUTPUT_IS_LIST = (True, True)
     FUNCTION = "tag"
     OUTPUT_NODE = True
 
@@ -195,11 +204,18 @@ class WD14Tagger:
 
         pbar = comfy.utils.ProgressBar(tensor.shape[0])
         tags = []
+        tags_with_probs_formatted = []
         for i in range(tensor.shape[0]):
-            image = Image.fromarray(tensor[i])
-            tags.append(wait_for_async(lambda: tag(image, model, threshold, character_threshold, exclude_tags, replace_underscore, trailing_comma)))
+            img = Image.fromarray(tensor[i])
+            res, tags_with_probs = wait_for_async(lambda im=img: tag(im, model, threshold, character_threshold, exclude_tags, replace_underscore, trailing_comma))
+            tags.append(res)
+            formatted = ", ".join(f"{d['tag']}:{d['probability']:.2f}" for d in tags_with_probs)
+            tags_with_probs_formatted.append(formatted)
             pbar.update(1)
-        return {"ui": {"tags": tags}, "result": (tags,)}
+        return {
+            "ui": {"tags": tags, "tags_with_probabilities": tags_with_probs_formatted},
+            "result": (tags, tags_with_probs_formatted),
+        }
 
 
 NODE_CLASS_MAPPINGS = {

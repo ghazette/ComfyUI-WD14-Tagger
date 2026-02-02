@@ -93,11 +93,18 @@ app.registerExtension({
 					this.widgets.length = pos;
 				}
 
-				for (const list of message.tags) {
-					const w = ComfyWidgets["STRING"](this, "tags", ["STRING", { multiline: true }], app).widget;
-					w.inputEl.readOnly = true;
-					w.inputEl.style.opacity = 0.6;
-					w.value = list;
+				const tagsList = message.tags || [];
+				const probsList = message.tags_with_probabilities || [];
+				for (let i = 0; i < tagsList.length; i++) {
+					const wTags = ComfyWidgets["STRING"](this, "tags", ["STRING", { multiline: true }], app).widget;
+					wTags.inputEl.readOnly = true;
+					wTags.inputEl.style.opacity = 0.6;
+					wTags.value = tagsList[i];
+
+					const wProbs = ComfyWidgets["STRING"](this, "tags_with_probabilities", ["STRING", { multiline: true }], app).widget;
+					wProbs.inputEl.readOnly = true;
+					wProbs.inputEl.style.opacity = 0.6;
+					wProbs.value = i < probsList.length ? probsList[i] : "";
 				}
 
 				this.onResize?.(this.size);
