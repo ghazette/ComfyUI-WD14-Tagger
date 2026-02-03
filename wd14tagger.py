@@ -26,7 +26,7 @@ defaults = {
     "replace_underscore": False,
     "trailing_comma": False,
     "exclude_tags": "",
-    "ortProviders": ["CUDAExecutionProvider", "CPUExecutionProvider"],
+    "ortProviders": ["CPUExecutionProvider", "CUDAExecutionProvider"],
     "HF_ENDPOINT": "https://huggingface.co"
 }
 defaults.update(config.get("settings", {}))
